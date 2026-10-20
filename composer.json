@@ -1,0 +1,70 @@
+{
+    "name": "jjnguirazej/mpesa-sdk",
+    "description": "SDK Laravel para a API M-Pesa da Vodacom Moçambique (C2B, B2C, B2B, reversão e consulta de estado).",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "laravel",
+        "mpesa",
+        "m-pesa",
+        "vodacom",
+        "mocambique",
+        "mozambique",
+        "c2b",
+        "b2c",
+        "b2b",
+        "payments"
+    ],
+    "authors": [
+        {
+            "name": "Jose Jorge Nguiraze Junior",
+            "homepage": "https://github.com/jjnguirazej",
+            "role": "Maintainer"
+        },
+        {
+            "name": "Samuel Bie",
+            "homepage": "https://github.com/Samuel-Bie",
+            "role": "Original author (samuelbie/mpesa)"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "ext-json": "*",
+        "ext-openssl": "*",
+        "illuminate/contracts": "^11.0|^12.0|^13.0",
+        "illuminate/http": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "phpunit/phpunit": "^10.5|^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Jjnguirazej\\MpesaSdk\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Jjnguirazej\\MpesaSdk\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Jjnguirazej\\MpesaSdk\\MpesaSdkServiceProvider"
+            ],
+            "aliases": {
+                "Mpesa": "Jjnguirazej\\MpesaSdk\\Facades\\Mpesa"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
