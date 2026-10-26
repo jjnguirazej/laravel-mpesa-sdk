@@ -6,11 +6,13 @@ namespace Jjnguirazej\MpesaSdk\Tests\Feature;
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Jjnguirazej\MpesaSdk\Exceptions\ConfigurationException;
 use Jjnguirazej\MpesaSdk\Exceptions\ValidationException;
 use Jjnguirazej\MpesaSdk\MpesaClient;
 use Jjnguirazej\MpesaSdk\MpesaConfig;
 use Jjnguirazej\MpesaSdk\Operation;
+use Jjnguirazej\MpesaSdk\Responses\TransactionStatus;
 use Jjnguirazej\MpesaSdk\Tests\Fixtures\Responses;
 use Jjnguirazej\MpesaSdk\Tests\KeyPair;
 use Jjnguirazej\MpesaSdk\Tests\TestCase;
@@ -91,7 +93,7 @@ final class OperationsTest extends TestCase
             ]);
     }
 
-    public function test_reversal_sends_initiator_credentials_with_put(): void
+    public function test_reversal_sends_documented_payload_with_put(): void
     {
         Http::fake(['*' => Http::response(Responses::success(), 200)]);
 
@@ -99,10 +101,25 @@ final class OperationsTest extends TestCase
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'PUT'
             && $request->url() === 'https://api.sandbox.vm.co.mz:18354/ipg/v1x/reversal/'
-            && $request['input_TransactionID'] === 'abc123xyz'
-            && $request['input_InitiatorIdentifier'] === self::INITIATOR_IDENTIFIER
-            && $request['input_SecurityCredential'] === self::SECURITY_CREDENTIAL
-            && $request['input_Amount'] === '10');
+            && $request->data() === [
+                'input_TransactionID' => 'abc123xyz',
+                'input_SecurityCredential' => self::SECURITY_CREDENTIAL,
+                'input_InitiatorIdentifier' => self::INITIATOR_IDENTIFIER,
+                'input_ThirdPartyReference' => 'REF126',
+                'input_ServiceProviderCode' => self::SERVICE_PROVIDER_CODE,
+                'input_ReversalAmount' => '10',
+            ]);
+    }
+
+    public function test_full_reversal_omits_reversal_amount(): void
+    {
+        Http::fake(['*' => Http::response(Responses::success(), 200)]);
+
+        $this->client()->reversal(null, 'abc123xyz', 'REF127');
+
+        Http::assertSent(fn (Request $request): bool => ! array_key_exists('input_ReversalAmount', $request->data())
+            && ! array_key_exists('input_Amount', $request->data())
+            && $request['input_TransactionID'] === 'abc123xyz');
     }
 
     public function test_reversal_requires_initiator_configuration(): void
@@ -152,11 +169,58 @@ final class OperationsTest extends TestCase
         $this->assertTrue($response->isCompleted());
     }
 
-    public function test_query_with_other_status_is_not_completed(): void
+    /**
+     * @return array<string, array{string, ?TransactionStatus}>
+     */
+    public static function nonCompletedStatuses(): array
     {
-        Http::fake(['*' => Http::response(Responses::success(['output_ResponseTransactionStatus' => 'Pending']), 200)]);
+        return [
+            'cancelada' => ['Cancelled', TransactionStatus::Cancelled],
+            'expirada' => ['Expired', TransactionStatus::Expired],
+            'n/a' => ['N/A', TransactionStatus::NotAvailable],
+            'não documentado' => ['Pending', null],
+        ];
+    }
 
-        $this->assertFalse($this->client()->query('abc123xyz', 'Q2')->isCompleted());
+    #[DataProvider('nonCompletedStatuses')]
+    public function test_query_with_other_status_is_not_completed(string $raw, ?TransactionStatus $expected): void
+    {
+        Http::fake(['*' => Http::response(Responses::success(['output_ResponseTransactionStatus' => $raw]), 200)]);
+
+        $response = $this->client()->query('abc123xyz', 'Q2');
+
+        $this->assertFalse($response->isCompleted());
+        $this->assertSame($expected, $response->status());
+        $this->assertSame($raw, $response->transactionStatus);
+    }
+
+    public function test_reference_with_twenty_characters_is_accepted(): void
+    {
+        Http::fake(['*' => Http::response(Responses::success(), 201)]);
+
+        $this->client()->c2b(10, '841234567', str_repeat('A', 20), 'B');
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_synchronous_response_is_not_awaiting_result(): void
+    {
+        Http::fake(['*' => Http::response(Responses::success(), 201)]);
+
+        $this->assertFalse($this->client()->c2b(10, '841234567', 'A', 'B')->isAwaitingResult());
+    }
+
+    public function test_asynchronous_acceptance_is_awaiting_result(): void
+    {
+        $async = Responses::success();
+        unset($async['output_TransactionID']);
+        Http::fake(['*' => Http::response($async, 201)]);
+
+        $response = $this->client()->b2c(10, '841234567', 'A', 'B');
+
+        $this->assertTrue($response->isAwaitingResult());
+        $this->assertSame('d8f0a5b8a1c24c0a9b7f3e2d1c0b9a87', $response->conversationId);
+        $this->assertTrue($response->toArray()['awaiting_result']);
     }
 
     public function test_payment_response_without_status_is_not_completed(): void
@@ -188,6 +252,8 @@ final class OperationsTest extends TestCase
             fn () => $this->client()->c2b(10, '841234567', '', 'B'),
             fn () => $this->client()->b2b(10, ' ', 'A', 'B'),
             fn () => $this->client()->query('', 'B'),
+            fn () => $this->client()->c2b(10, '841234567', str_repeat('A', 21), 'B'),
+            fn () => $this->client()->reversal(0, 'abc123xyz', 'B'),
         ] as $call) {
             try {
                 $call();

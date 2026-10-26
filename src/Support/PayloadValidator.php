@@ -40,16 +40,21 @@ final class PayloadValidator
     }
 
     /**
-     * Garante um identificador ou referência não vazio e sem caracteres de controlo.
+     * Garante um identificador ou referência não vazio, sem caracteres de controlo
+     * e, se indicado, com tamanho máximo.
      *
      * @throws ValidationException
      */
-    public static function text(string $value, string $field): string
+    public static function text(string $value, string $field, ?int $maxLength = null): string
     {
         $value = trim($value);
 
         if ($value === '') {
             throw new ValidationException("O campo {$field} é obrigatório.", $field);
+        }
+
+        if ($maxLength !== null && mb_strlen($value) > $maxLength) {
+            throw new ValidationException("O campo {$field} deve ter no máximo {$maxLength} caracteres.", $field);
         }
 
         if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Jjnguirazej\MpesaSdk;
 
+use Jjnguirazej\MpesaSdk\Callbacks\CallbackResult;
 use Jjnguirazej\MpesaSdk\Exceptions\ApiException;
 use Jjnguirazej\MpesaSdk\Exceptions\ConfigurationException;
 use Jjnguirazej\MpesaSdk\Exceptions\ConnectionException;
+use Jjnguirazej\MpesaSdk\Exceptions\InvalidCallbackException;
 use Jjnguirazej\MpesaSdk\Exceptions\InvalidResponseException;
 use Jjnguirazej\MpesaSdk\Exceptions\ValidationException;
 use Jjnguirazej\MpesaSdk\Http\Transport;
@@ -22,6 +24,11 @@ use Jjnguirazej\MpesaSdk\Support\PayloadValidator;
  */
 final class MpesaClient
 {
+    /**
+     * Limite documentado de input_TransactionReference (INS-17: entre 1 e 20 caracteres).
+     */
+    public const TRANSACTION_REFERENCE_MAX_LENGTH = 20;
+
     public function __construct(
         private readonly Transport $transport,
         private readonly MpesaConfig $config,
@@ -52,7 +59,7 @@ final class MpesaClient
             'input_ServiceProviderCode' => $this->config->serviceProviderCode,
             'input_CustomerMSISDN' => Msisdn::normalize($msisdn),
             'input_Amount' => PayloadValidator::amount($amount),
-            'input_TransactionReference' => PayloadValidator::text($reference, 'reference'),
+            'input_TransactionReference' => PayloadValidator::text($reference, 'reference', self::TRANSACTION_REFERENCE_MAX_LENGTH),
             'input_ThirdPartyReference' => PayloadValidator::text($thirdPartyReference, 'thirdPartyReference'),
         ]);
     }
@@ -75,7 +82,7 @@ final class MpesaClient
             'input_ServiceProviderCode' => $this->config->serviceProviderCode,
             'input_CustomerMSISDN' => Msisdn::normalize($msisdn),
             'input_Amount' => PayloadValidator::amount($amount),
-            'input_TransactionReference' => PayloadValidator::text($reference, 'reference'),
+            'input_TransactionReference' => PayloadValidator::text($reference, 'reference', self::TRANSACTION_REFERENCE_MAX_LENGTH),
             'input_ThirdPartyReference' => PayloadValidator::text($thirdPartyReference, 'thirdPartyReference'),
         ]);
     }
@@ -98,7 +105,7 @@ final class MpesaClient
     ): TransactionResponse {
         return $this->transport->send(Operation::B2B, [
             'input_Amount' => PayloadValidator::amount($amount),
-            'input_TransactionReference' => PayloadValidator::text($reference, 'reference'),
+            'input_TransactionReference' => PayloadValidator::text($reference, 'reference', self::TRANSACTION_REFERENCE_MAX_LENGTH),
             'input_ThirdPartyReference' => PayloadValidator::text($thirdPartyReference, 'thirdPartyReference'),
             'input_PrimaryPartyCode' => $this->config->serviceProviderCode,
             'input_ReceiverPartyCode' => PayloadValidator::text($receiverPartyCode, 'receiverPartyCode'),
@@ -106,10 +113,13 @@ final class MpesaClient
     }
 
     /**
-     * Reversão (estorno) de uma transação. Exige MPESA_INITIATOR_IDENTIFIER e
+     * Reversão de uma transação bem-sucedida. Exige MPESA_INITIATOR_IDENTIFIER e
      * MPESA_SECURITY_CREDENTIAL.
      *
-     * @param  int|float|string  $amount  valor a reverter
+     * Sem valor (null), a API tenta a reversão total. Com valor, tenta uma
+     * reversão parcial ou total desse montante (input_ReversalAmount).
+     *
+     * @param  int|float|string|null  $amount  valor a reverter, ou null para reversão total
      * @param  string  $transactionId  output_TransactionID da transação original
      *
      * @throws ConfigurationException
@@ -119,7 +129,7 @@ final class MpesaClient
      * @throws InvalidResponseException
      */
     public function reversal(
-        int|float|string $amount,
+        int|float|string|null $amount,
         string $transactionId,
         string $thirdPartyReference,
     ): TransactionResponse {
@@ -128,14 +138,19 @@ final class MpesaClient
         $credential = $this->config->securityCredential
             ?? throw ConfigurationException::missing('security_credential', 'MPESA_SECURITY_CREDENTIAL');
 
-        return $this->transport->send(Operation::Reversal, [
-            'input_Amount' => PayloadValidator::amount($amount),
+        $payload = [
             'input_TransactionID' => PayloadValidator::text($transactionId, 'transactionId'),
+            'input_SecurityCredential' => $credential,
+            'input_InitiatorIdentifier' => $initiator,
             'input_ThirdPartyReference' => PayloadValidator::text($thirdPartyReference, 'thirdPartyReference'),
             'input_ServiceProviderCode' => $this->config->serviceProviderCode,
-            'input_InitiatorIdentifier' => $initiator,
-            'input_SecurityCredential' => $credential,
-        ]);
+        ];
+
+        if ($amount !== null) {
+            $payload['input_ReversalAmount'] = PayloadValidator::amount($amount);
+        }
+
+        return $this->transport->send(Operation::Reversal, $payload);
     }
 
     /**
@@ -156,5 +171,19 @@ final class MpesaClient
             'input_ServiceProviderCode' => $this->config->serviceProviderCode,
             'input_ThirdPartyReference' => PayloadValidator::text($thirdPartyReference, 'thirdPartyReference'),
         ]);
+    }
+
+    /**
+     * Interpreta o resultado assíncrono recebido no Response URL.
+     *
+     * Não prova que o pedido veio da M-Pesa: confirme com query() antes de agir.
+     *
+     * @param  array<string, mixed>  $payload  corpo JSON recebido
+     *
+     * @throws InvalidCallbackException
+     */
+    public function parseCallback(array $payload): CallbackResult
+    {
+        return CallbackResult::fromArray($payload);
     }
 }
