@@ -12,6 +12,8 @@ use Jjnguirazej\MpesaSdk\Operation;
  *
  * O SDK só devolve esta classe em caso de sucesso. Qualquer outro resultado
  * resulta numa exceção, por isso nunca é preciso verificar o código manualmente.
+ *
+ * Em modo assíncrono, sucesso significa apenas "pedido aceite": ver isAwaitingResult().
  */
 final class TransactionResponse implements JsonSerializable
 {
@@ -58,6 +60,26 @@ final class TransactionResponse implements JsonSerializable
     }
 
     /**
+     * Resposta imediata do modo assíncrono: o pedido foi aceite, mas o resultado
+     * final só chega ao Response URL (ou por query()).
+     *
+     * Detetado pela ausência de output_TransactionID em operações financeiras,
+     * que é o formato documentado da resposta assíncrona.
+     */
+    public function isAwaitingResult(): bool
+    {
+        return $this->operation !== Operation::Query && $this->transactionId === null;
+    }
+
+    /**
+     * Estado documentado da transação (apenas em query()), ou null se ausente ou não documentado.
+     */
+    public function status(): ?TransactionStatus
+    {
+        return TransactionStatus::fromProvider($this->transactionStatus);
+    }
+
+    /**
      * Apenas para query(): a transação consultada tem o estado "Completed".
      *
      * Qualquer outro estado (ou estado ausente) devolve false; estados
@@ -65,8 +87,7 @@ final class TransactionResponse implements JsonSerializable
      */
     public function isCompleted(): bool
     {
-        return $this->transactionStatus !== null
-            && strcasecmp($this->transactionStatus, 'Completed') === 0;
+        return $this->status() === TransactionStatus::Completed;
     }
 
     /**
@@ -83,6 +104,7 @@ final class TransactionResponse implements JsonSerializable
             'conversation_id' => $this->conversationId,
             'third_party_reference' => $this->thirdPartyReference,
             'transaction_status' => $this->transactionStatus,
+            'awaiting_result' => $this->isAwaitingResult(),
         ];
     }
 
