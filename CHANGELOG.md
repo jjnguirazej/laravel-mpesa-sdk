@@ -13,10 +13,15 @@ Primeira versão de `jjnguirazej/mpesa-sdk`, reescrita a partir de `samuelbie/mp
 - Configuração `MPESA_ENV` (`sandbox`/`production`) com hosts associados.
 - Validação da configuração com mensagens claras (`ConfigurationException`).
 - Exceções específicas: `ValidationException`, `ApiException`, `AuthenticationException`, `ConnectionException`, `InvalidResponseException`.
-- `TransactionResponse` imutável, com `isCompleted()` para consultas e acesso à resposta original (`raw`).
+- `TransactionResponse` imutável, com `isCompleted()`, `status()` e `isAwaitingResult()` (modo assíncrono), e acesso à resposta original (`raw`).
+- `ResponseCode` com a tabela oficial completa de códigos `INS-*` e `ResponseCode::describe()`.
+- Enum `TransactionStatus` (`Completed`, `Cancelled`, `Expired`, `N/A`).
+- `parseCallback()` / `CallbackResult` para o resultado assíncrono enviado ao Response URL, com `acknowledgement()` no formato documentado.
+- Reversão total quando o valor é `null`.
+- Validação local do limite de 20 caracteres de `input_TransactionReference`.
 - Tempos limite configuráveis (`MPESA_TIMEOUT`, `MPESA_CONNECT_TIMEOUT`).
 - Suporte a chave pública em formato PEM.
-- Suite de testes com `Http::fake()` (83 testes).
+- Suite de testes com `Http::fake()` (106 testes).
 - Documentação completa em português.
 
 ### Alterado
@@ -31,6 +36,7 @@ Primeira versão de `jjnguirazej/mpesa-sdk`, reescrita a partir de `samuelbie/mp
 
 - B2B não funcionava (endpoint e método ausentes da configuração).
 - Pedidos enviavam `form_params` e `json` ao mesmo tempo.
+- Reversão enviava o valor como `input_Amount`; a documentação oficial define `input_ReversalAmount` (opcional).
 
 ### Removido
 

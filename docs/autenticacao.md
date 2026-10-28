@@ -26,6 +26,7 @@ Por isso o SDK não usa a cache do Laravel para tokens: não haveria ganho e cri
 | Falha ao cifrar | `ConfigurationException` |
 | API recusa a chave (`INS-2`) | `AuthenticationException` |
 | HTTP 401/403 sem corpo JSON | `AuthenticationException` |
+| Credenciais do iniciador erradas (`INS-24`, `INS-25`, `INS-2001`) | `ApiException` (apenas em reversões) |
 
 Atenção: a API usa HTTP 401 também para transações recusadas pelo cliente (`INS-5`, `INS-6`). Por isso o SDK decide pelo `output_ResponseCode`, e não só pelo código HTTP. Essas situações lançam `ApiException`, não `AuthenticationException`.
 

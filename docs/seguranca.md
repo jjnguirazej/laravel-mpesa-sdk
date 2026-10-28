@@ -32,9 +32,17 @@
 - Mensagens de exceção não contêm credenciais, tokens nem corpos de resposta.
 - Evite registar `ApiException::$response` completo ou números de telefone dos clientes sem necessidade.
 
-## Callbacks
+## Callbacks assíncronos
 
-O SDK não expõe endpoints nem processa callbacks. Se a sua aplicação receber notificações de outra origem, valide-as segundo a documentação oficial da Vodacom.
+A documentação da M-Pesa não define assinatura, segredo partilhado nem outro mecanismo para provar que um pedido no Response URL veio da M-Pesa. O SDK não inventa um. `parseCallback()` apenas valida o formato.
+
+Recomendações:
+
+- Use HTTPS e um caminho com um segredo aleatório (ex.: `/mpesa/callback/{token}`), comparado com `hash_equals()`.
+- Restrinja por IP se a Vodacom lhe indicar os endereços de origem.
+- Processe cada `input_OriginalConversationID` uma única vez (índice único na base de dados) para resistir a repetições.
+- Nunca entregue bens apenas com base no callback: confirme com `query()`.
+- Responda sempre com `acknowledgement()` depois de registar o resultado, para que a M-Pesa não reenvie.
 
 ## Alterações em relação ao `samuelbie/mpesa`
 

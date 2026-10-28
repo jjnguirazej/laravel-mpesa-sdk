@@ -47,11 +47,11 @@ Por compatibilidade com `samuelbie/mpesa`, `MPESA_PROVIDER_NUMBER` também é li
 
 ### `origin` (`MPESA_ORIGIN`)
 
-Valor do cabeçalho `Origin`. Por omissão `*`, como no SDK original.
+Valor do cabeçalho `Origin`. Por omissão `*`, como no SDK original. A documentação oficial mostra `developer.mpesa.vm.co.mz` como exemplo; se a API recusar pedidos por causa da origem, use esse valor ou o indicado pela Vodacom.
 
 ### `initiator_identifier` e `security_credential`
 
-Necessários apenas para `reversal()`. Se faltarem, `reversal()` lança `ConfigurationException` antes de enviar o pedido; as restantes operações funcionam normalmente.
+Necessários apenas para `reversal()`. Gerados pela Vodacom para identificar e verificar a sua entidade, juntamente com o shortcode. Se faltarem, `reversal()` lança `ConfigurationException` antes de enviar o pedido; as restantes operações funcionam normalmente.
 
 ### `timeout` (`MPESA_TIMEOUT`) e `connect_timeout` (`MPESA_CONNECT_TIMEOUT`)
 

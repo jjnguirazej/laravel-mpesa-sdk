@@ -57,12 +57,14 @@ Implementado e testado (com respostas simuladas):
 
 Inclui também:
 
+- Leitura do resultado assíncrono enviado para o Response URL (`parseCallback()`) e resposta de confirmação no formato documentado.
+- Tabela completa de códigos `INS-*` e estados da transação (`Completed`, `Cancelled`, `Expired`, `N/A`).
 - Geração automática do token de autenticação.
 - Validação e normalização de números Vodacom (84/85) e valores.
 - Exceções específicas para cada tipo de falha.
 - Integração com o container do Laravel, facade opcional e descoberta automática.
 
-Não implementado (ver [Limitações conhecidas](#15-limitações-conhecidas)): consulta do nome do cliente, callbacks/webhooks, C2B em duas fases.
+Não implementado (ver [Limitações conhecidas](#15-limitações-conhecidas)): consulta do nome do cliente, C2B em duas fases, verificação criptográfica de callbacks (a M-Pesa não documenta assinatura).
 
 ## 3. Requisitos
 
@@ -235,13 +237,15 @@ Boas práticas:
 
 Todos os métodos aceitam o valor como `int`, `float` ou `string` numérica com até 2 casas decimais (ex.: `10`, `10.5`, `'10.50'`). O valor é enviado como texto (`"10.5"`).
 
+A `reference` (`input_TransactionReference`) deve ter entre 1 e 20 caracteres, como exige a API (`INS-17`). O SDK recusa referências mais longas antes de enviar o pedido.
+
 ### C2B — cobrar um cliente
 
 ```php
 $resposta = $mpesa->c2b(
     amount: 250,
     msisdn: '+258841234567',          // 84/85, com ou sem 258, +258 ou 00258
-    reference: 'Fatura1024',          // input_TransactionReference
+    reference: 'Fatura1024',          // input_TransactionReference (1 a 20 caracteres)
     thirdPartyReference: 'FT1024A',   // input_ThirdPartyReference (única)
 );
 ```
@@ -275,14 +279,18 @@ O shortcode de origem (`input_PrimaryPartyCode`) é o `MPESA_SERVICE_PROVIDER_CO
 ### Reversão
 
 ```php
+// Reversão parcial (ou total) de um valor: envia input_ReversalAmount
 $resposta = $mpesa->reversal(
     amount: 250,
     transactionId: 'abc123xyz',       // output_TransactionID da transação original
     thirdPartyReference: 'REV1024',
 );
+
+// Reversão total: sem valor, a API reverte a transação completa
+$resposta = $mpesa->reversal(null, 'abc123xyz', 'REV1025');
 ```
 
-Requer `MPESA_INITIATOR_IDENTIFIER` e `MPESA_SECURITY_CREDENTIAL`.
+Requer `MPESA_INITIATOR_IDENTIFIER` e `MPESA_SECURITY_CREDENTIAL`. Só transações bem-sucedidas podem ser revertidas.
 
 ### Consulta de estado
 
@@ -292,7 +300,8 @@ $estado = $mpesa->query(
     thirdPartyReference: 'Q1024',
 );
 
-$estado->transactionStatus;  // output_ResponseTransactionStatus, ex.: "Completed"
+$estado->transactionStatus;  // texto original: "Completed", "Cancelled", "Expired" ou "N/A"
+$estado->status();           // enum TransactionStatus, ou null se o valor não for documentado
 $estado->isCompleted();      // true apenas se o estado for "Completed"
 ```
 
@@ -310,6 +319,8 @@ $estado->isCompleted();      // true apenas se o estado for "Completed"
 | `transactionStatus` | `output_ResponseTransactionStatus` | Apenas em `query()`. |
 | `raw` | (corpo completo) | Resposta original da API, sem alterações. |
 
+Métodos: `isSuccessful()`, `isCompleted()`, `status()` e `isAwaitingResult()` (ver [Fluxo de pagamento](#9-fluxo-de-pagamento)).
+
 `toArray()` e `json_encode()` devolvem os campos normalizados (sem `raw`). Use `raw` se precisar de um campo que o SDK não mapeia.
 
 ## 9. Fluxo de pagamento
@@ -317,7 +328,8 @@ $estado->isCompleted();      // true apenas se o estado for "Completed"
 1. **Gere e guarde** uma referência única (`thirdPartyReference`) e o pedido com estado "pendente", antes de chamar a API.
 2. **Chame `c2b()`.** A API envia um pedido de PIN ao cliente e aguarda.
 3. **Resultado:**
-   - Resposta devolvida (`INS-0`): a M-Pesa reporta a transação como bem-sucedida. Guarde `transactionId` e `conversationId`.
+   - Resposta devolvida (`INS-0`) com `transactionId`: modo síncrono, a M-Pesa reporta a transação como bem-sucedida. Guarde `transactionId` e `conversationId`.
+   - Resposta devolvida (`INS-0`) com `isAwaitingResult() === true`: modo assíncrono. O pedido foi **apenas aceite**; o resultado final chega ao seu Response URL (ver [Callbacks](#11-callbacks-e-webhooks)) ou por `query()` com o `conversationId`. Mantenha o pedido pendente.
    - `ApiException`: a M-Pesa recusou (cliente cancelou, saldo insuficiente, referência duplicada, etc.). O pagamento não foi feito.
    - `ConnectionException`: **estado desconhecido.** A API pode ter processado o pagamento. Mantenha o pedido "pendente" e use `query()` para confirmar.
 4. **Reconcilie** pedidos pendentes com `query()` (por exemplo num job agendado), usando o `transactionId`/`conversationId` quando os tiver.
@@ -336,16 +348,72 @@ Todas as exceções estendem `Jjnguirazej\MpesaSdk\Exceptions\MpesaException`.
 | `AuthenticationException` | Subclasse de `ApiException`: credenciais recusadas (`INS-2` ou HTTP 401/403 sem corpo). | Sim |
 | `ConnectionException` | Falha de rede ou tempo limite. `isTimeout()`. **Estado da transação desconhecido.** | Talvez |
 | `InvalidResponseException` | Resposta sem JSON válido ou sem `output_ResponseCode`. `httpStatus`. | Sim |
+| `InvalidCallbackException` | Callback recebido sem os campos obrigatórios. | — |
 
 Atalhos em `ApiException`: `isCancelledByCustomer()` (INS-5), `isRequestTimeout()` (INS-9), `isDuplicate()` (INS-10), `isInsufficientBalance()` (INS-2006).
+
+Todos os códigos da documentação oficial estão em `ResponseCode` (constantes e `ResponseCode::describe($codigo)`).
 
 Mais em [docs/tratamento-de-erros.md](docs/tratamento-de-erros.md).
 
 ## 11. Callbacks e webhooks
 
-O SDK **não** implementa callbacks nem webhooks. As operações suportadas são síncronas: o resultado vem na própria resposta HTTP. O SDK original também não suportava callbacks, e não foi possível confirmar na documentação pública um mecanismo de callback assinado para estes endpoints.
+Quando a conta funciona em modo assíncrono, a M-Pesa responde de imediato com `output_ConversationID` (sem `output_TransactionID`) e, quando a transação termina, envia o resultado por `POST` para o **Response URL** configurado em *My Account* no portal. O seu listener deve responder com uma confirmação.
 
-Para confirmar o estado final de uma transação, use `query()`.
+```php
+// routes/api.php (sem proteção CSRF)
+use App\Http\Controllers\MpesaCallbackController;
+
+Route::post('/mpesa/callback/{token}', MpesaCallbackController::class);
+```
+
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Payment;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Jjnguirazej\MpesaSdk\Exceptions\InvalidCallbackException;
+use Jjnguirazej\MpesaSdk\MpesaClient;
+
+class MpesaCallbackController extends Controller
+{
+    public function __invoke(Request $request, string $token, MpesaClient $mpesa): JsonResponse
+    {
+        // Caminho secreto: a M-Pesa não assina os callbacks.
+        abort_unless(hash_equals((string) config('services.mpesa.callback_token'), $token), 404);
+
+        try {
+            $result = $mpesa->parseCallback($request->json()->all());
+        } catch (InvalidCallbackException) {
+            return response()->json(['message' => 'Pedido inválido.'], 400);
+        }
+
+        // Idempotência: o mesmo resultado pode chegar mais de uma vez.
+        $payment = Payment::where('conversation_id', $result->originalConversationId)
+            ->where('status', 'pending')
+            ->first();
+
+        if ($payment !== null) {
+            // Não confie apenas no callback: confirme junto da API.
+            ProcessMpesaResult::dispatch($payment->id);
+        }
+
+        return response()->json($result->acknowledgement());
+    }
+}
+```
+
+Campos disponíveis em `CallbackResult`: `originalConversationId`, `thirdPartyReference`, `transactionId` (reversões), `resultCode` (`"0"` = sucesso), `resultDescription`, `transactionStatus`, `raw`. Métodos: `isSuccessful()`, `status()`, `acknowledgement()`.
+
+**Segurança:** a documentação da M-Pesa não define assinatura nem outro mecanismo para provar a origem do callback. Por isso:
+
+- use um caminho secreto e HTTPS;
+- processe cada `originalConversationId` uma única vez;
+- **confirme o estado com `query()`** antes de entregar bens ou serviços;
+- se a Vodacom lhe indicar os IPs de origem, restrinja o acesso a esses IPs.
 
 ## 12. Testes
 
@@ -381,6 +449,7 @@ Http::fake([
 - O SDK não escreve logs. Mensagens de exceção nunca incluem a chave de API, o token, a credencial de segurança ou o corpo da resposta.
 - `var_dump`/`dd` da configuração oculta os segredos.
 - Proteção contra duplicados: a M-Pesa recusa um `thirdPartyReference` repetido com `INS-10`. Use referências únicas por transação.
+- Callbacks não são assinados pela M-Pesa: trate-os como não confiáveis e confirme com `query()`.
 
 Ver [docs/seguranca.md](docs/seguranca.md).
 
@@ -400,13 +469,13 @@ Ver [docs/seguranca.md](docs/seguranca.md).
 
 ## 15. Limitações conhecidas
 
-- **Testes apenas simulados.** O pacote não foi validado contra a API real (sandbox ou produção) durante esta reescrita. Teste no sandbox antes de usar em produção.
-- **Documentação oficial não verificada.** O portal da Vodacom exige conta. Endpoints, portas e campos seguem o SDK original e o `abdulmueid/mpesa-php-api`, e coincidem com outros SDKs públicos para esta API.
-- **Reversão:** o valor é enviado como `input_Amount` (como no SDK original). Algumas implementações para outras APIs M-Pesa usam `input_ReversalAmount`; confirme no portal.
-- **Códigos `INS-*`:** só `INS-0` é tratado como sucesso. Os significados dos atalhos (`INS-2`, `INS-5`, `INS-9`, `INS-10`, `INS-2006`) seguem a documentação conhecida; confirme a lista completa no portal.
-- **Estados de `query()`:** apenas `"Completed"` é tratado como concluído. Outros valores ficam disponíveis em `transactionStatus`, sem interpretação.
-- **Limites de referências:** o SDK só exige que não estejam vazias. Limites de tamanho/caracteres são validados pela API.
-- Não implementado: consulta de nome do cliente (`queryCustomerName`), callbacks/webhooks, C2B em duas fases, outros mercados M-Pesa.
+- **Testes apenas simulados.** O pacote não foi validado contra a API real (sandbox ou produção). Teste no sandbox antes de usar em produção.
+- **Documentação oficial parcial.** Foram confirmados com a documentação do portal: a tabela de códigos `INS-*`, os estados da transação, o formato da reversão (`input_ReversalAmount` opcional) e o formato dos callbacks assíncronos. Endpoints e campos de C2B, B2C, B2B e consulta seguem o SDK original e coincidem com outros SDKs públicos.
+- **Callbacks sem assinatura.** A M-Pesa não documenta forma de verificar a origem do callback; o SDK só interpreta o conteúdo.
+- **`isAwaitingResult()`** deteta o modo assíncrono pela ausência de `output_TransactionID`, que é o formato documentado da resposta assíncrona. Confirme o modo da sua conta no portal.
+- **Cabeçalho `Origin`:** o SDK envia `*` por omissão (como o SDK original); a documentação mostra `developer.mpesa.vm.co.mz` como exemplo. Ajuste `MPESA_ORIGIN` se a sua conta o exigir.
+- **Limites de referências:** só o limite de 20 caracteres de `input_TransactionReference` é validado localmente; outras regras são validadas pela API.
+- Não implementado: consulta de nome do cliente (`queryCustomerName`), C2B em duas fases, outros mercados M-Pesa.
 
 ## 16. Contribuição
 
@@ -440,6 +509,7 @@ use Illuminate\Support\Str;
 use Jjnguirazej\MpesaSdk\Exceptions\ApiException;
 use Jjnguirazej\MpesaSdk\Exceptions\ConnectionException;
 use Jjnguirazej\MpesaSdk\MpesaClient;
+use Jjnguirazej\MpesaSdk\Responses\TransactionStatus;
 
 class MpesaPaymentService
 {
@@ -462,7 +532,8 @@ class MpesaPaymentService
             );
 
             $payment->update([
-                'status' => 'paid',
+                // Modo assíncrono: só aceite; o resultado chega pelo callback ou por query().
+                'status' => $response->isAwaitingResult() ? 'pending' : 'paid',
                 'transaction_id' => $response->transactionId,
                 'conversation_id' => $response->conversationId,
             ]);
@@ -480,24 +551,28 @@ class MpesaPaymentService
      */
     public function reconcile(Payment $payment): void
     {
-        if ($payment->status !== 'pending' || $payment->transaction_id === null) {
+        $reference = $payment->transaction_id ?? $payment->conversation_id;
+
+        if ($payment->status !== 'pending' || $reference === null) {
             return;
         }
 
         try {
-            $result = $this->mpesa->query($payment->transaction_id, 'Q'.Str::upper(Str::random(10)));
+            $result = $this->mpesa->query($reference, 'Q'.Str::upper(Str::random(10)));
         } catch (ApiException|ConnectionException) {
             return; // tenta de novo na próxima execução
         }
 
-        if ($result->isCompleted()) {
-            $payment->update(['status' => 'paid']);
-        }
+        match ($result->status()) {
+            TransactionStatus::Completed => $payment->update(['status' => 'paid']),
+            TransactionStatus::Cancelled, TransactionStatus::Expired => $payment->update(['status' => 'failed']),
+            default => null, // N/A ou desconhecido: mantém pendente
+        };
     }
 }
 ```
 
-> Nota: se a ligação falhar no `c2b()`, a aplicação pode não ter `transactionId`. Nesse caso confirme o estado no portal M-Pesa ou com a Vodacom antes de cobrar novamente.
+> Nota: se a ligação falhar no `c2b()`, a aplicação pode não ter `transactionId` nem `conversationId`. Nesse caso confirme o estado no portal M-Pesa ou com a Vodacom antes de cobrar novamente.
 
 ### Teste da aplicação com `Http::fake`
 
