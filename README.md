@@ -29,7 +29,7 @@ composer require jjnguirazej/mpesa-sdk
 17. [Licença e atribuição](#17-licença-e-atribuição)
 18. [Exemplos completos](#18-exemplos-completos)
 
-Documentação detalhada: [configuração](docs/configuracao.md) · [autenticação](docs/autenticacao.md) · [pagamentos](docs/pagamentos.md) · [erros](docs/tratamento-de-erros.md) · [segurança](docs/seguranca.md) · [changelog](CHANGELOG.md)
+Histórico de versões: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -126,7 +126,130 @@ MPESA_SECURITY_CREDENTIAL=sua-security-credential
 
 As credenciais são validadas quando o `MpesaClient` é usado pela primeira vez. Se faltar algum valor, é lançada uma `ConfigurationException` com o nome da variável em falta.
 
-Mais detalhes em [docs/configuracao.md](docs/configuracao.md).
+### Como a configuração é carregada
+
+1. O service provider junta `config/mpesa.php` do pacote com o da aplicação (se publicado).
+2. Na primeira vez que o `MpesaClient` é pedido ao container, o array `config('mpesa')` é convertido em `MpesaConfig` e validado.
+3. Se algo estiver errado, é lançada `ConfigurationException` com o nome da chave e da variável `.env`.
+
+A validação é feita no primeiro uso (e não no arranque) para que comandos como `php artisan migrate` funcionem mesmo sem credenciais M-Pesa.
+
+### Opções em detalhe
+
+#### `environment` (`MPESA_ENV`)
+
+`sandbox` (por omissão) ou `production`. Qualquer outro valor é recusado. Define o host:
+
+| Ambiente | Host |
+|---|---|
+| `sandbox` | `api.sandbox.vm.co.mz` |
+| `production` | `api.vm.co.mz` |
+
+#### `api_host` (`MPESA_API_HOST`)
+
+Substitui o host do ambiente. Só aceita um nome de host (`exemplo.co.mz`). São recusados protocolos (`https://`), portas (`:18352`), caminhos e credenciais embutidas (`user@host`). O protocolo é sempre HTTPS e as portas são fixas por operação.
+
+Use apenas se a Vodacom lhe indicar um host diferente.
+
+#### `api_key` (`MPESA_API_KEY`) e `public_key` (`MPESA_PUBLIC_KEY`)
+
+Fornecidas no portal. A chave pública pode ser colada só com o conteúdo base64 (como aparece no portal) ou em formato PEM:
+
+```env
+MPESA_PUBLIC_KEY=MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA...
+```
+
+```env
+MPESA_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA...
+-----END PUBLIC KEY-----"
+```
+
+#### `service_provider_code` (`MPESA_SERVICE_PROVIDER_CODE`)
+
+Shortcode da sua entidade. Enviado como `input_ServiceProviderCode` e, no B2B, como `input_PrimaryPartyCode`. No sandbox o código de testes é normalmente `171717`.
+
+Por compatibilidade com `samuelbie/mpesa`, `MPESA_PROVIDER_NUMBER` também é lido se `MPESA_SERVICE_PROVIDER_CODE` não existir. Ao contrário do pacote original, não há valor por omissão: um shortcode errado em produção não deve passar despercebido.
+
+#### `origin` (`MPESA_ORIGIN`)
+
+Valor do cabeçalho `Origin`. Por omissão `*`, como no SDK original. A documentação oficial mostra `developer.mpesa.vm.co.mz` como exemplo; se a API recusar pedidos por causa da origem, use esse valor ou o indicado pela Vodacom.
+
+#### `initiator_identifier` e `security_credential`
+
+Necessários apenas para `reversal()`. Gerados pela Vodacom para identificar e verificar a sua entidade, juntamente com o shortcode. Se faltarem, `reversal()` lança `ConfigurationException` antes de enviar o pedido; as restantes operações funcionam normalmente.
+
+#### `timeout` (`MPESA_TIMEOUT`) e `connect_timeout` (`MPESA_CONNECT_TIMEOUT`)
+
+Em segundos, inteiros maiores que zero. Por omissão `120` e `10`.
+
+O C2B só responde depois de o cliente reagir ao pedido de PIN. Um `timeout` curto faz com que a sua aplicação desista enquanto o cliente ainda está a confirmar, deixando a transação em estado desconhecido. Mantenha um valor generoso.
+
+### Cache de configuração
+
+Em produção, após alterar o `.env`:
+
+```bash
+php artisan config:clear
+php artisan config:cache
+```
+
+### Várias contas M-Pesa
+
+O container regista uma única configuração. Para usar outra conta, crie o cliente manualmente:
+
+```php
+use Illuminate\Http\Client\Factory;
+use Jjnguirazej\MpesaSdk\Auth\BearerTokenGenerator;
+use Jjnguirazej\MpesaSdk\Http\Transport;
+use Jjnguirazej\MpesaSdk\MpesaClient;
+use Jjnguirazej\MpesaSdk\MpesaConfig;
+
+$config = MpesaConfig::fromArray(config('services.mpesa_loja2'));
+
+$client = new MpesaClient(
+    new Transport(app(Factory::class), $config, new BearerTokenGenerator($config)),
+    $config,
+);
+```
+
+### Autenticação
+
+#### Como funciona
+
+A API M-Pesa da Vodacom Moçambique não usa OAuth nem um endpoint para obter tokens. O token é calculado localmente:
+
+1. A chave de API (`MPESA_API_KEY`) é cifrada com a chave pública RSA (`MPESA_PUBLIC_KEY`), usando padding PKCS#1 v1.5.
+2. O resultado é codificado em base64.
+3. É enviado no cabeçalho `Authorization: Bearer <token>`.
+
+Isto é feito pela classe interna `Jjnguirazej\MpesaSdk\Auth\BearerTokenGenerator`, chamada automaticamente pelo `Transport` em cada pedido. Os controllers nunca veem o token.
+
+#### Porque não há cache nem renovação
+
+- A geração é local e rápida (uma operação RSA), sem pedido de rede.
+- Não existe um prazo de validade documentado nem um endpoint de renovação.
+- O padding PKCS#1 v1.5 é aleatório, por isso cada token é diferente; gerar um por pedido é o comportamento do SDK original e do `abdulmueid/mpesa-php-api`.
+
+Por isso o SDK não usa a cache do Laravel para tokens: não haveria ganho e criaria mais um local onde um segredo ficaria guardado.
+
+#### Erros
+
+| Situação | Exceção |
+|---|---|
+| Chave pública ilegível | `ConfigurationException` (antes de qualquer pedido) |
+| Falha ao cifrar | `ConfigurationException` |
+| API recusa a chave (`INS-2`) | `AuthenticationException` |
+| HTTP 401/403 sem corpo JSON | `AuthenticationException` |
+| Credenciais do iniciador erradas (`INS-24`, `INS-25`, `INS-2001`) | `ApiException` (apenas em reversões) |
+
+Atenção: a API usa HTTP 401 também para transações recusadas pelo cliente (`INS-5`, `INS-6`). Por isso o SDK decide pelo `output_ResponseCode`, e não só pelo código HTTP. Essas situações lançam `ApiException`, não `AuthenticationException`.
+
+#### Causas comuns de `AuthenticationException`
+
+- Credenciais de sandbox com `MPESA_ENV=production` (ou o contrário).
+- Chave de API copiada com espaços ou aspas a mais.
+- Chave pública de um ambiente diferente da chave de API.
 
 ## 6. Primeiro uso
 
@@ -235,9 +358,26 @@ Boas práticas:
 
 ## 8. Exemplos práticos
 
-Todos os métodos aceitam o valor como `int`, `float` ou `string` numérica com até 2 casas decimais (ex.: `10`, `10.5`, `'10.50'`). O valor é enviado como texto (`"10.5"`).
+### Referências
 
-A `reference` (`input_TransactionReference`) deve ter entre 1 e 20 caracteres, como exige a API (`INS-17`). O SDK recusa referências mais longas antes de enviar o pedido.
+| Referência | Quem gera | Uso |
+|---|---|---|
+| `reference` (`input_TransactionReference`) | A aplicação | Descrição/identificador visível da transação. Entre 1 e 20 caracteres (`INS-17`). |
+| `thirdPartyReference` (`input_ThirdPartyReference`) | A aplicação | Identificador único da aplicação. Repetido = `INS-10`. |
+| `transactionId` (`output_TransactionID`) | M-Pesa | Identificador da transação na M-Pesa. Usado em `reversal()` e `query()`. |
+| `conversationId` (`output_ConversationID`) | M-Pesa | Identificador do pedido na M-Pesa. Usado em `query()` e para ligar o callback assíncrono (`input_OriginalConversationID`). |
+
+Guarde sempre a `thirdPartyReference` **antes** de chamar a API e os identificadores M-Pesa depois.
+
+### Valores
+
+- Aceita `int`, `float` ou `string` numérica, maior que zero, com até 2 casas decimais.
+- Valores com mais casas são **recusados**, não arredondados (o SDK original arredondava).
+- Enviado como texto: `10` → `"10"`, `10.50` → `"10.5"`.
+
+### Números de telefone
+
+Aceita números Vodacom (84 e 85) nos formatos `84XXXXXXX`, `25884XXXXXXX`, `+25884XXXXXXX`, `0025884XXXXXXX`, com espaços ou hífens. Enviado como `25884XXXXXXX`.
 
 ### C2B — cobrar um cliente
 
@@ -290,7 +430,9 @@ $resposta = $mpesa->reversal(
 $resposta = $mpesa->reversal(null, 'abc123xyz', 'REV1025');
 ```
 
-Requer `MPESA_INITIATOR_IDENTIFIER` e `MPESA_SECURITY_CREDENTIAL`. Só transações bem-sucedidas podem ser revertidas.
+Reverte uma transação **bem-sucedida**: a M-Pesa retira o valor da carteira de quem recebeu e devolve-o a quem iniciou a transação original. Com valor, é enviado `input_ReversalAmount` (reversão parcial ou total desse montante); com `null`, o campo é omitido e a API tenta a reversão total.
+
+Requer `MPESA_INITIATOR_IDENTIFIER` e `MPESA_SECURITY_CREDENTIAL`. Credenciais do iniciador erradas devolvem `INS-24`, `INS-25` ou `INS-2001`.
 
 ### Consulta de estado
 
@@ -334,7 +476,57 @@ Métodos: `isSuccessful()`, `isCompleted()`, `status()` e `isAwaitingResult()` (
    - `ConnectionException`: **estado desconhecido.** A API pode ter processado o pagamento. Mantenha o pedido "pendente" e use `query()` para confirmar.
 4. **Reconcilie** pedidos pendentes com `query()` (por exemplo num job agendado), usando o `transactionId`/`conversationId` quando os tiver.
 
-Não repita um `c2b()` automaticamente após um erro de ligação. Use sempre `query()` primeiro. Detalhes em [docs/pagamentos.md](docs/pagamentos.md).
+Não repita um `c2b()` automaticamente após um erro de ligação. Use sempre `query()` primeiro.
+
+### Estados possíveis de um C2B
+
+| Resultado da chamada | Significado | O que fazer |
+|---|---|---|
+| `TransactionResponse` (`INS-0`) com `transactionId` | Modo síncrono: a M-Pesa reporta sucesso. | Marcar como pago; guardar `transactionId`. |
+| `TransactionResponse` com `isAwaitingResult()` | Modo assíncrono: pedido só aceite. | Manter pendente; guardar `conversationId`; aguardar callback ou usar `query()`. |
+| `ApiException` | A M-Pesa recusou ou a transação falhou. | Marcar como falhado; mostrar mensagem ao cliente. |
+| `ApiException::isRequestTimeout()` (`INS-9`) | O cliente não confirmou a tempo. | Marcar como falhado; permitir nova tentativa com nova referência. |
+| `ConnectionException` | Sem resposta: **estado desconhecido**. | Manter pendente e confirmar com `query()`. |
+| `InvalidResponseException` | Resposta ilegível: **estado desconhecido**. | Manter pendente e confirmar com `query()`. |
+| `ValidationException` / `ConfigurationException` | Nada foi enviado. | Corrigir dados ou configuração. |
+
+O SDK nunca devolve uma resposta quando o código não é `INS-0` ou o HTTP não é 2xx.
+
+### Iniciar não é confirmar
+
+Uma resposta HTTP bem-sucedida, por si só, não prova o pagamento. O SDK exige **as duas** condições: HTTP 2xx e `output_ResponseCode = INS-0`. Mesmo assim, recomenda-se reconciliar periodicamente com `query()`, sobretudo para pedidos que ficaram em estado desconhecido.
+
+### Consultar o estado
+
+```php
+$estado = $mpesa->query($transactionIdOuConversationId, 'Q'.Str::random(10));
+
+use Jjnguirazej\MpesaSdk\Responses\TransactionStatus;
+
+match ($estado->status()) {
+    TransactionStatus::Completed => $pedido->marcarComoPago(),
+    TransactionStatus::Cancelled, TransactionStatus::Expired => $pedido->marcarComoFalhado(),
+    TransactionStatus::NotAvailable, null => null, // sem informação: tentar mais tarde
+};
+```
+
+- `queryReference`: `transactionId` ou `conversationId` da transação original.
+- `thirdPartyReference`: referência desta consulta.
+- Estados documentados (`output_ResponseTransactionStatus`): `Completed`, `Cancelled`, `Expired`, `N/A`. `status()` devolve o enum `TransactionStatus`, ou `null` para valores não documentados.
+- `isCompleted()` só devolve `true` para `Completed`. Estados desconhecidos nunca contam como pagos.
+- O texto original fica em `$estado->transactionStatus`.
+
+### Modo assíncrono
+
+Se a conta estiver em modo assíncrono, a resposta imediata só contém `output_ConversationID`, `output_ThirdPartyReference`, `output_ResponseCode` e `output_ResponseDesc`. `INS-0` significa apenas "pedido aceite". `TransactionResponse::isAwaitingResult()` devolve `true` nesse caso.
+
+O resultado final chega ao Response URL (ver [Callbacks e webhooks](#11-callbacks-e-webhooks)) com `input_ResultCode = "0"` em caso de sucesso, e pode ser confirmado com `query($conversationId, ...)`.
+
+### Repetições e duplicados
+
+- O SDK **não repete** pedidos automaticamente.
+- A M-Pesa recusa uma `thirdPartyReference` repetida com `INS-10` (`ApiException::isDuplicate()`). Se reutilizar a mesma referência ao repetir um pagamento em estado desconhecido, a M-Pesa impede a cobrança dupla; mas um `INS-10` não diz se a primeira tentativa foi concluída — confirme com `query()`.
+- O SDK não inventa um mecanismo de idempotência próprio.
 
 ## 10. Tratamento de erros
 
@@ -354,7 +546,111 @@ Atalhos em `ApiException`: `isCancelledByCustomer()` (INS-5), `isRequestTimeout(
 
 Todos os códigos da documentação oficial estão em `ResponseCode` (constantes e `ResponseCode::describe($codigo)`).
 
-Mais em [docs/tratamento-de-erros.md](docs/tratamento-de-erros.md).
+### Hierarquia
+
+```
+RuntimeException
+└── MpesaException
+    ├── ConfigurationException
+    ├── ValidationException            (field)
+    ├── ConnectionException            (operation, isTimeout())
+    ├── InvalidResponseException       (operation, httpStatus)
+    ├── InvalidCallbackException       (callback sem campos obrigatórios)
+    └── ApiException                   (operation, httpStatus, responseCode, responseDescription, response)
+        └── AuthenticationException
+```
+
+Todas estão em `Jjnguirazej\MpesaSdk\Exceptions`.
+
+### Como o SDK decide
+
+1. Erro de rede → `ConnectionException`.
+2. Corpo sem JSON válido ou sem `output_ResponseCode`:
+   - HTTP 401/403 → `AuthenticationException`;
+   - outros → `InvalidResponseException`.
+3. HTTP 2xx **e** `INS-0` → devolve `TransactionResponse`.
+4. `INS-2` → `AuthenticationException`.
+5. Qualquer outro caso → `ApiException`.
+
+### Ordem recomendada de `catch`
+
+Do mais específico para o mais genérico:
+
+```php
+try {
+    $resposta = $mpesa->c2b($valor, $telefone, $ref, $refUnica);
+} catch (ValidationException $e) {
+    // dados inválidos; nada enviado. $e->field indica o campo.
+} catch (AuthenticationException $e) {
+    // credenciais erradas: alertar a equipa técnica.
+} catch (ApiException $e) {
+    // recusado pela M-Pesa. $e->responseCode, $e->isCancelledByCustomer(), ...
+} catch (ConnectionException | InvalidResponseException $e) {
+    // estado desconhecido: confirmar com query().
+} catch (ConfigurationException $e) {
+    // configuração em falta.
+}
+```
+
+Ou capture apenas `MpesaException` se a aplicação tratar tudo da mesma forma.
+
+### Códigos da API
+
+Tabela da documentação oficial. A coluna "SDK" indica a exceção lançada.
+
+| HTTP | Código | Descrição | Constante | SDK |
+|---|---|---|---|---|
+| 200/201 | INS-0 | Request processed successfully | `SUCCESS` | resposta devolvida |
+| 500 | INS-1 | Internal Error | `INTERNAL_ERROR` | `ApiException` |
+| 401 | INS-2 | Invalid API Key | `INVALID_API_KEY` | `AuthenticationException` |
+| 401 | INS-4 | User is not active | `USER_NOT_ACTIVE` | `ApiException` |
+| 401 | INS-5 | Transaction cancelled by customer | `CANCELLED_BY_CUSTOMER` | `ApiException` |
+| 401 | INS-6 | Transaction Failed | `TRANSACTION_FAILED` | `ApiException` |
+| 408 | INS-9 | Request timeout | `REQUEST_TIMEOUT` | `ApiException` |
+| 409 | INS-10 | Duplicate Transaction | `DUPLICATE_TRANSACTION` | `ApiException` |
+| 400 | INS-13 | Invalid Shortcode Used | `INVALID_SHORTCODE` | `ApiException` |
+| 400 | INS-14 | Invalid Reference Used | `INVALID_REFERENCE` | `ApiException` |
+| 400 | INS-15 | Invalid Amount Used | `INVALID_AMOUNT` | `ApiException` |
+| 503 | INS-16 | Unable to handle the request due to a temporary overloading | `TEMPORARY_OVERLOAD` | `ApiException` |
+| 400 | INS-17 | Invalid Transaction Reference. Length Should Be Between 1 and 20. | `INVALID_TRANSACTION_REFERENCE_LENGTH` | evitado localmente (`ValidationException`) |
+| 400 | INS-18 | Invalid TransactionID Used | `INVALID_TRANSACTION_ID` | `ApiException` |
+| 400 | INS-19 | Invalid ThirdPartyReference Used | `INVALID_THIRD_PARTY_REFERENCE` | `ApiException` |
+| 400 | INS-20 | Not All Parameters Provided. Please try again. | `MISSING_PARAMETERS` | `ApiException` |
+| 400 | INS-21 | Parameter validations failed. Please try again. | `PARAMETER_VALIDATION_FAILED` | `ApiException` |
+| 400 | INS-22 | Invalid Operation Type | `INVALID_OPERATION_TYPE` | `ApiException` |
+| 400 | INS-23 | Unknown Status. Contact M-Pesa Support | `UNKNOWN_STATUS` | `ApiException` |
+| 400 | INS-24 | Invalid InitiatorIdentifier Used | `INVALID_INITIATOR_IDENTIFIER` | `ApiException` |
+| 400 | INS-25 | Invalid SecurityCredential Used | `INVALID_SECURITY_CREDENTIAL` | `ApiException` |
+| 400 | INS-26 | Not authorized | `NOT_AUTHORIZED` | `ApiException` |
+| 400 | INS-993 | Direct Debit Missing | `DIRECT_DEBIT_MISSING` | `ApiException` |
+| 400 | INS-994 | Direct Debit Already Exists | `DIRECT_DEBIT_ALREADY_EXISTS` | `ApiException` |
+| 400 | INS-995 | Customer's Profile Has Problems | `CUSTOMER_PROFILE_PROBLEM` | `ApiException` |
+| 400 | INS-996 | Customer Account Status Not Active | `CUSTOMER_ACCOUNT_NOT_ACTIVE` | `ApiException` |
+| 400 | INS-997 | Linking Transaction Not Found | `LINKING_TRANSACTION_NOT_FOUND` | `ApiException` |
+| 400 | INS-998 | Invalid Market | `INVALID_MARKET` | `ApiException` |
+| 400 | INS-2001 | Initiator authentication error. | `INITIATOR_AUTHENTICATION_ERROR` | `ApiException` |
+| 400 | INS-2002 | Receiver invalid. | `INVALID_RECEIVER` | `ApiException` |
+| 422 | INS-2006 | Insufficient balance | `INSUFFICIENT_BALANCE` | `ApiException` |
+| 400 | INS-2051 | MSISDN invalid. | `INVALID_MSISDN` | `ApiException` |
+| 400 | INS-2057 | Language code invalid. | `INVALID_LANGUAGE_CODE` | `ApiException` |
+
+Note que HTTP 401 aparece tanto em falhas de autenticação (`INS-2`) como em transações recusadas (`INS-5`, `INS-6`). O SDK decide pelo código `INS-*`, não pelo HTTP.
+
+Códigos que pedem nova tentativa mais tarde: `INS-1` e `INS-16`. Antes de repetir uma operação financeira, confirme com `query()` que a primeira não foi processada.
+
+### Mensagens e logs
+
+- As mensagens estão em português e incluem a operação, o código M-Pesa e o HTTP. Nunca incluem a chave de API, o token, a credencial de segurança, o identificador do iniciador nem o corpo da resposta.
+- `ApiException::$response` contém o corpo JSON devolvido pela M-Pesa. Não o devolva ao cliente final; registe apenas os campos necessários.
+- O SDK não escreve logs. A política de logging é da aplicação:
+
+```php
+Log::warning('M-Pesa recusou o pagamento.', [
+    'operation' => $e->operation->value,
+    'code' => $e->responseCode,
+    'http' => $e->httpStatus,
+]);
+```
 
 ## 11. Callbacks e webhooks
 
@@ -442,17 +738,61 @@ Http::fake([
 
 ## 13. Segurança
 
-- Credenciais apenas no `.env`; nunca em código nem no repositório.
-- Sempre HTTPS, com verificação de certificado ativa. A opção `verifySSL => false` do pacote original foi removida.
-- Portas e caminhos fixos no código; o host só pode ser alterado pela configuração e é validado (sem protocolo, porta ou caminho).
-- Nenhum pedido é repetido automaticamente; redirecionamentos são recusados.
-- O SDK não escreve logs. Mensagens de exceção nunca incluem a chave de API, o token, a credencial de segurança ou o corpo da resposta.
-- `var_dump`/`dd` da configuração oculta os segredos.
-- Proteção contra duplicados: a M-Pesa recusa um `thirdPartyReference` repetido com `INS-10`. Use referências únicas por transação.
-- Callbacks não são assinados pela M-Pesa: trate-os como não confiáveis e confirme com `query()`.
+### Credenciais
 
-Ver [docs/seguranca.md](docs/seguranca.md).
+- Guarde `MPESA_API_KEY`, `MPESA_INITIATOR_IDENTIFIER` e `MPESA_SECURITY_CREDENTIAL` apenas no `.env` (ou num gestor de segredos). Nunca no código nem no Git.
+- Use credenciais diferentes para sandbox e produção. O pacote nunca muda para produção sem `MPESA_ENV=production`.
+- O `.env.example` do pacote contém apenas valores fictícios.
+- `MpesaConfig` oculta os segredos em `var_dump()`, `dd()` e `print_r()`, e os parâmetros sensíveis usam `#[SensitiveParameter]` para não aparecerem em stack traces.
 
+### Transporte
+
+- Sempre HTTPS, com verificação do certificado (`verify => true`). Não existe opção para a desligar.
+- Redirecionamentos HTTP são recusados.
+- Portas e caminhos estão fixos no código (`Operation`). Só o host pode ser alterado, pela configuração, e é validado como nome de host simples. Nenhum dado vindo de um pedido HTTP da aplicação influencia o destino.
+- Tempos limite de ligação e de resposta configuráveis.
+
+### Repetições e duplicados
+
+- Nenhum pedido é repetido automaticamente. Repetir um pagamento sem saber o resultado do primeiro pode cobrar duas vezes.
+- Use uma `thirdPartyReference` única por transação; a M-Pesa recusa repetições com `INS-10`.
+
+### Integridade do pagamento
+
+- Sucesso exige HTTP 2xx **e** `INS-0`. Qualquer outro caso lança exceção.
+- Respostas malformadas nunca são tratadas como sucesso.
+- `isCompleted()` só é verdadeiro para o estado `"Completed"`; estados desconhecidos não contam como pagos.
+- Erros de rede e respostas ilegíveis são "estado desconhecido" e devem ser confirmados com `query()`.
+
+### Logs e exceções
+
+- O SDK não regista logs.
+- Mensagens de exceção não contêm credenciais, tokens nem corpos de resposta.
+- Evite registar `ApiException::$response` completo ou números de telefone dos clientes sem necessidade.
+
+### Callbacks assíncronos
+
+A documentação da M-Pesa não define assinatura, segredo partilhado nem outro mecanismo para provar que um pedido no Response URL veio da M-Pesa. O SDK não inventa um. `parseCallback()` apenas valida o formato.
+
+Recomendações:
+
+- Use HTTPS e um caminho com um segredo aleatório (ex.: `/mpesa/callback/{token}`), comparado com `hash_equals()`.
+- Restrinja por IP se a Vodacom lhe indicar os endereços de origem.
+- Processe cada `input_OriginalConversationID` uma única vez (índice único na base de dados) para resistir a repetições.
+- Nunca entregue bens apenas com base no callback: confirme com `query()`.
+- Responda sempre com `acknowledgement()` depois de registar o resultado, para que a M-Pesa não reenvie.
+
+### Alterações em relação ao `samuelbie/mpesa`
+
+| Antes | Agora |
+|---|---|
+| `verifySSL => false` (TLS sem verificação) | Verificação sempre ativa |
+| `.env.example` com chaves com aspeto real | Apenas valores fictícios |
+| Erros de rede devolviam uma resposta com estado HTTP 460 inventado | `ConnectionException` |
+| Erros 4xx/5xx devolvidos como resposta normal | `ApiException` |
+| Endpoints e métodos HTTP alteráveis por `.env` | Fixos no código |
+| Shortcode `171717` por omissão | Obrigatório |
+| Valores arredondados silenciosamente | Recusados se tiverem mais de 2 casas decimais |
 ## 14. Solução de problemas
 
 | Sintoma | Causa provável | Solução |
