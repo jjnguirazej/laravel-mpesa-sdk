@@ -5,29 +5,40 @@ declare(strict_types=1);
 namespace Jjnguirazej\MpesaSdk;
 
 use Jjnguirazej\MpesaSdk\Exceptions\ConfigurationException;
+use Jjnguirazej\MpesaSdk\Support\Secret;
 use SensitiveParameter;
 
 /**
  * Configuração validada do SDK.
  *
- * Os segredos nunca aparecem em var_dump(), dd() ou print_r() graças a __debugInfo().
+ * Os segredos são guardados em objetos Secret: não aparecem em dd(), var_dump(),
+ * var_export() nem json_encode(), e a configuração não pode ser serializada.
  */
 final class MpesaConfig
 {
+    public readonly Secret $apiKey;
+
+    public readonly ?Secret $initiatorIdentifier;
+
+    public readonly ?Secret $securityCredential;
+
     private const HOSTNAME_PATTERN = '/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i';
 
     public function __construct(
         public readonly Environment $environment,
         public readonly string $apiHost,
-        #[SensitiveParameter] public readonly string $apiKey,
+        #[SensitiveParameter] string $apiKey,
         public readonly string $publicKey,
         public readonly string $serviceProviderCode,
         public readonly string $origin = '*',
-        #[SensitiveParameter] public readonly ?string $initiatorIdentifier = null,
-        #[SensitiveParameter] public readonly ?string $securityCredential = null,
+        #[SensitiveParameter] ?string $initiatorIdentifier = null,
+        #[SensitiveParameter] ?string $securityCredential = null,
         public readonly int $timeout = 120,
         public readonly int $connectTimeout = 10,
     ) {
+        $this->apiKey = new Secret($apiKey);
+        $this->initiatorIdentifier = $initiatorIdentifier === null ? null : new Secret($initiatorIdentifier);
+        $this->securityCredential = $securityCredential === null ? null : new Secret($securityCredential);
     }
 
     /**

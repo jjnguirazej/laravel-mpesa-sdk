@@ -16,6 +16,7 @@ use Jjnguirazej\MpesaSdk\MpesaConfig;
 use Jjnguirazej\MpesaSdk\Operation;
 use Jjnguirazej\MpesaSdk\Responses\ResponseCode;
 use Jjnguirazej\MpesaSdk\Responses\TransactionResponse;
+use SensitiveParameter;
 
 /**
  * Único ponto do SDK que comunica com a API.
@@ -34,13 +35,15 @@ final class Transport
     }
 
     /**
+     * O payload é marcado como sensível porque a reversão inclui credenciais do iniciador.
+     *
      * @param  array<string, string>  $payload
      *
      * @throws ApiException
      * @throws ConnectionException
      * @throws InvalidResponseException
      */
-    public function send(Operation $operation, array $payload): TransactionResponse
+    public function send(Operation $operation, #[SensitiveParameter] array $payload): TransactionResponse
     {
         $request = $this->http
             ->baseUrl($this->config->baseUrl($operation))

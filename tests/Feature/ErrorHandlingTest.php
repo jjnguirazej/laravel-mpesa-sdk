@@ -193,6 +193,77 @@ final class ErrorHandlingTest extends TestCase
         $this->assertInstanceOf(MpesaException::class, $this->catch(fn () => $this->c2b()));
     }
 
+    /**
+     * Junta todos os argumentos escalares e arrays das stack traces da cadeia de exceções.
+     */
+    private function traceArguments(Throwable $exception): string
+    {
+        $output = '';
+        $walk = function (mixed $value, int $depth = 0) use (&$walk, &$output): void {
+            if ($depth > 6) {
+                return;
+            }
+
+            if (is_string($value)) {
+                $output .= $value."\n";
+            } elseif (is_array($value)) {
+                foreach ($value as $item) {
+                    $walk($item, $depth + 1);
+                }
+            }
+        };
+
+        for ($current = $exception; $current !== null; $current = $current->getPrevious()) {
+            foreach ($current->getTrace() as $frame) {
+                $walk($frame['args'] ?? []);
+            }
+        }
+
+        return $output;
+    }
+
+    public function test_connection_exception_does_not_chain_transport_error(): void
+    {
+        Http::fake(fn () => throw new ConnectException(
+            'cURL error 7: Failed to connect',
+            new PsrRequest('POST', 'https://api.sandbox.vm.co.mz:18352/', ['Authorization' => 'Bearer x']),
+        ));
+
+        $exception = $this->catch(fn () => $this->c2b());
+
+        $this->assertInstanceOf(ConnectionException::class, $exception);
+        $this->assertNull($exception->getPrevious());
+        $this->assertSame(7, $exception->curlError);
+        $this->assertStringContainsString('cURL 7', $exception->getMessage());
+    }
+
+    public function test_stack_trace_arguments_never_expose_credentials(): void
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+
+        try {
+            foreach ([
+                fn () => Http::fake(['*' => Http::response(Responses::error('INS-6', 'Transaction Failed'), 401)]),
+                fn () => Http::fake(fn () => throw new ConnectException('cURL error 28: timed out', new PsrRequest('PUT', 'https://x'))),
+            ] as $scenario) {
+                $this->app->forgetInstance(\Illuminate\Http\Client\Factory::class);
+                Http::clearResolvedInstances();
+                $this->app->forgetInstance(MpesaClient::class);
+                $scenario();
+
+                $arguments = $this->traceArguments($this->catch(
+                    fn () => $this->app->make(MpesaClient::class)->reversal(10, 'abc123xyz', 'REF1'),
+                ));
+
+                $this->assertStringNotContainsString(self::API_KEY, $arguments);
+                $this->assertStringNotContainsString(self::SECURITY_CREDENTIAL, $arguments);
+                $this->assertStringNotContainsString(self::INITIATOR_IDENTIFIER, $arguments);
+            }
+        } finally {
+            ini_set('zend.exception_ignore_args', (string) $previous);
+        }
+    }
+
     public function test_exceptions_never_expose_credentials(): void
     {
         $scenarios = [

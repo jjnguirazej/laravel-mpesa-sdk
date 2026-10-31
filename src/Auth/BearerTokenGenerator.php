@@ -35,7 +35,7 @@ final class BearerTokenGenerator
 
         $encrypted = '';
 
-        if (! openssl_public_encrypt($this->config->apiKey, $encrypted, $key, OPENSSL_PKCS1_PADDING)) {
+        if (! openssl_public_encrypt($this->config->apiKey->reveal(), $encrypted, $key, OPENSSL_PKCS1_PADDING)) {
             $this->clearOpenSslErrors();
 
             throw ConfigurationException::tokenGenerationFailed();

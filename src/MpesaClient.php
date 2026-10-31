@@ -140,8 +140,8 @@ final class MpesaClient
 
         $payload = [
             'input_TransactionID' => PayloadValidator::text($transactionId, 'transactionId'),
-            'input_SecurityCredential' => $credential,
-            'input_InitiatorIdentifier' => $initiator,
+            'input_SecurityCredential' => $credential->reveal(),
+            'input_InitiatorIdentifier' => $initiator->reveal(),
             'input_ThirdPartyReference' => PayloadValidator::text($thirdPartyReference, 'thirdPartyReference'),
             'input_ServiceProviderCode' => $this->config->serviceProviderCode,
         ];
