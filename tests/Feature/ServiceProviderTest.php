@@ -70,6 +70,14 @@ final class ServiceProviderTest extends TestCase
         $this->assertSame(Mpesa::class, $composer['extra']['laravel']['aliases']['Mpesa']);
     }
 
+    public function test_sensitive_fields_list_covers_reversal_credentials(): void
+    {
+        $this->assertSame(
+            ['input_SecurityCredential', 'input_InitiatorIdentifier'],
+            MpesaSdkServiceProvider::SENSITIVE_PAYLOAD_FIELDS,
+        );
+    }
+
     public function test_missing_configuration_fails_on_first_use(): void
     {
         config()->set('mpesa.api_key', null);
