@@ -743,7 +743,18 @@ Http::fake([
 - Guarde `MPESA_API_KEY`, `MPESA_INITIATOR_IDENTIFIER` e `MPESA_SECURITY_CREDENTIAL` apenas no `.env` (ou num gestor de segredos). Nunca no código nem no Git.
 - Use credenciais diferentes para sandbox e produção. O pacote nunca muda para produção sem `MPESA_ENV=production`.
 - O `.env.example` do pacote contém apenas valores fictícios.
-- `MpesaConfig` oculta os segredos em `var_dump()`, `dd()` e `print_r()`, e os parâmetros sensíveis usam `#[SensitiveParameter]` para não aparecerem em stack traces.
+- A chave de API e as credenciais do iniciador ficam em objetos `Secret`, fora das propriedades da configuração. Não aparecem em `dd()`, `dump()`, `var_dump()`, `print_r()`, `var_export()` nem `json_encode()`.
+- A configuração não pode ser serializada (lança `LogicException`). Isto impede que as credenciais acabem numa fila, cache ou sessão. Em jobs, resolva o `MpesaClient` no método `handle()`, nunca no construtor:
+
+```php
+public function handle(MpesaClient $mpesa): void
+{
+    $mpesa->query($this->transactionId, $this->reference);
+}
+```
+
+- O token Bearer é a chave de API cifrada e não expira. Quem obtiver um cabeçalho `Authorization` consegue usá-lo como se tivesse a chave. Trate-o como a própria chave.
+- Com `php artisan config:cache`, os valores do `.env` ficam em `bootstrap/cache/config.php`. Garanta que esse ficheiro não é público nem vai para o Git (comportamento normal do Laravel).
 
 ### Transporte
 
@@ -768,6 +779,10 @@ Http::fake([
 
 - O SDK não regista logs.
 - Mensagens de exceção não contêm credenciais, tokens nem corpos de resposta.
+- Os argumentos com credenciais (payload enviado à API, valores de configuração) usam `#[SensitiveParameter]`, por isso não aparecem nas stack traces, mesmo com `zend.exception_ignore_args=0` ou em ferramentas como Sentry e Flare.
+- `ConnectionException` não encadeia a exceção original do Guzzle (`getPrevious()` é `null`), porque esta contém o pedido completo com o cabeçalho `Authorization`. Só o código de erro cURL é preservado (`$e->curlError`).
+- **Telescope:** se estiver instalado, o SDK marca automaticamente `input_SecurityCredential` e `input_InitiatorIdentifier` como ocultos (o `Authorization` já é oculto pelo Telescope).
+- **Outras ferramentas:** o cliente HTTP do Laravel emite os eventos `RequestSending` e `ResponseReceived` com o pedido completo. Se a sua aplicação ou outra ferramenta de monitorização escutar esses eventos ou registar pedidos de saída, oculte o cabeçalho `Authorization` e os campos `input_SecurityCredential` e `input_InitiatorIdentifier`.
 - Evite registar `ApiException::$response` completo ou números de telefone dos clientes sem necessidade.
 
 ### Callbacks assíncronos

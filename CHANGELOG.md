@@ -21,7 +21,7 @@ Primeira versão de `jjnguirazej/mpesa-sdk`, reescrita a partir de `samuelbie/mp
 - Validação local do limite de 20 caracteres de `input_TransactionReference`.
 - Tempos limite configuráveis (`MPESA_TIMEOUT`, `MPESA_CONNECT_TIMEOUT`).
 - Suporte a chave pública em formato PEM.
-- Suite de testes com `Http::fake()` (106 testes).
+- Suite de testes com `Http::fake()` (115 testes).
 - Documentação completa em português.
 
 ### Alterado
@@ -47,7 +47,11 @@ Primeira versão de `jjnguirazej/mpesa-sdk`, reescrita a partir de `samuelbie/mp
 ### Segurança
 
 - Verificação de certificados TLS sempre ativa.
-- Segredos ocultos em `var_dump`/`dd` e marcados com `#[SensitiveParameter]`.
+- Credenciais guardadas em objetos `Secret`: ocultas em `dd`, `var_dump`, `var_export` e `json_encode`; serialização proibida.
+- Payload enviado à API e valores de configuração marcados com `#[SensitiveParameter]` (não aparecem em stack traces).
+- `ConnectionException` não encadeia a exceção do Guzzle, que continha o cabeçalho `Authorization`.
+- Credenciais da reversão ocultadas automaticamente no Telescope.
+- Workflow de CI com permissões só de leitura.
 - Mensagens de exceção sem credenciais, tokens ou corpos de resposta.
 - Redirecionamentos HTTP recusados; host validado.
 - `.env.example` apenas com valores fictícios.
