@@ -71,10 +71,12 @@ Não implementado (ver [Limitações conhecidas](#15-limitações-conhecidas)): 
 | Componente | Versões |
 |---|---|
 | PHP | 8.2 ou superior, com as extensões `openssl` e `json` |
-| Laravel | 11.x, 12.x ou 13.x |
+| Laravel | 12.x ou 13.x |
 | Composer | 2.x |
 
-Testado localmente com PHP 8.3 contra Laravel 11.0.3, 11.57, 12.70 e 13.39 (Guzzle 7 e 8), e instalado numa aplicação Laravel 13 nova para validar a descoberta automática e a publicação da configuração. O PHP 8.2 e o 8.4 estão incluídos na matriz de integração contínua (`.github/workflows/tests.yml`).
+Testado com PHP 8.2, 8.3 e 8.4 contra Laravel 12 e 13 (Guzzle 7 e 8) na integração contínua (`.github/workflows/tests.yml`), e instalado numa aplicação Laravel 13 nova para validar a descoberta automática e a publicação da configuração.
+
+O Laravel 11 não é suportado: terminou o período de correções de segurança e todas as suas versões têm avisos de segurança publicados. Atualize a aplicação para Laravel 12 ou 13.
 
 Também é necessária uma conta no [portal de desenvolvedores M-Pesa](https://developer.mpesa.vm.co.mz) para obter as credenciais.
 

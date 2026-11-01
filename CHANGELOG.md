@@ -30,7 +30,7 @@ Primeira versão de `jjnguirazej/mpesa-sdk`, reescrita a partir de `samuelbie/mp
 - Uma resposta só é devolvida com HTTP 2xx e `INS-0`; tudo o resto lança exceção.
 - Valores com mais de 2 casas decimais são recusados em vez de arredondados; o valor é enviado como texto.
 - `MPESA_PROVIDER_NUMBER` passa a `MPESA_SERVICE_PROVIDER_CODE` (o nome antigo continua a ser lido) e deixa de ter valor por omissão.
-- Requisitos: PHP 8.2+ e Laravel 11, 12 ou 13.
+- Requisitos: PHP 8.2+ e Laravel 12 ou 13.
 
 ### Corrigido
 
