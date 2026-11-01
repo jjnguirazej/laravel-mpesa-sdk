@@ -25,7 +25,7 @@ composer require jjnguirazej/mpesa-sdk
 13. [Segurança](#13-segurança)
 14. [Solução de problemas](#14-solução-de-problemas)
 15. [Limitações conhecidas](#15-limitações-conhecidas)
-16. [Contribuição](#16-contribuição)
+16. [Contribuição e suporte](#16-contribuição-e-suporte)
 17. [Licença e atribuição](#17-licença-e-atribuição)
 18. [Exemplos completos](#18-exemplos-completos)
 
@@ -832,12 +832,24 @@ Recomendações:
 - **Limites de referências:** só o limite de 20 caracteres de `input_TransactionReference` é validado localmente; outras regras são validadas pela API.
 - Não implementado: consulta de nome do cliente (`queryCustomerName`), C2B em duas fases, outros mercados M-Pesa.
 
-## 16. Contribuição
+## 16. Contribuição e suporte
+
+### Suporte
+
+Para dúvidas, ajuda na integração ou suporte:
+
+- **Telefone:** [+258 86 157 6768](tel:+258861576768)
+- **Email:** [contact@jorgenguiraze.com](mailto:contact@jorgenguiraze.com)
+- **Issues:** [github.com/jjnguirazej/laravel-mpesa-sdk/issues](https://github.com/jjnguirazej/laravel-mpesa-sdk/issues)
+
+Nunca envie credenciais M-Pesa (chave de API, credencial de segurança) por telefone, email ou issue.
+
+### Contribuição
 
 - **Erros:** abra uma issue com versão do PHP/Laravel, passos para reproduzir e a exceção obtida. Nunca inclua credenciais nem dados reais de clientes.
 - **Melhorias:** abra uma issue antes de mudanças grandes para discutir a abordagem.
 - **Código:** faça fork, crie um branch, adicione testes e confirme que `composer test` passa. Siga PSR-12, comentários em português e identificadores em inglês.
-- **Vulnerabilidades:** não abra issue pública; contacte o mantenedor diretamente pelo GitHub.
+- **Vulnerabilidades:** não abra issue pública; envie os detalhes para [contact@jorgenguiraze.com](mailto:contact@jorgenguiraze.com).
 
 ## 17. Licença e atribuição
 

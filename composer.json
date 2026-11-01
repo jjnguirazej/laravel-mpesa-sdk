@@ -18,6 +18,7 @@
     "authors": [
         {
             "name": "Jose Jorge Nguiraze Junior",
+            "email": "contact@jorgenguiraze.com",
             "homepage": "https://github.com/jjnguirazej",
             "role": "Maintainer"
         },
@@ -27,6 +28,12 @@
             "role": "Original author (samuelbie/mpesa)"
         }
     ],
+    "homepage": "https://github.com/jjnguirazej/laravel-mpesa-sdk",
+    "support": {
+        "email": "contact@jorgenguiraze.com",
+        "issues": "https://github.com/jjnguirazej/laravel-mpesa-sdk/issues",
+        "source": "https://github.com/jjnguirazej/laravel-mpesa-sdk"
+    },
     "require": {
         "php": "^8.2",
         "ext-json": "*",
