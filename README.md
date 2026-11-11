@@ -71,10 +71,12 @@ Não implementado (ver [Limitações conhecidas](#15-limitações-conhecidas)): 
 | Componente | Versões |
 |---|---|
 | PHP | 8.2 ou superior, com as extensões `openssl` e `json` |
-| Laravel | 12.x ou 13.x |
+| Laravel | 10.x, 12.x ou 13.x |
 | Composer | 2.x |
 
-Testado com PHP 8.2, 8.3 e 8.4 contra Laravel 12 e 13 (Guzzle 7 e 8) na integração contínua (`.github/workflows/tests.yml`), e instalado numa aplicação Laravel 13 nova para validar a descoberta automática e a publicação da configuração.
+Testado com PHP 8.2, 8.3 e 8.4 contra Laravel 10, 12 e 13 (Guzzle 7 e 8) na integração contínua (`.github/workflows/tests.yml`), e instalado numa aplicação Laravel 13 nova para validar a descoberta automática e a publicação da configuração.
+
+O Laravel 10 é aceite para que aplicações existentes possam substituir `samuelbie/mpesa` sem atualizar primeiro a framework. Também já terminou o período de correções de segurança, por isso recomenda-se planear a atualização para Laravel 12 ou 13.
 
 O Laravel 11 não é suportado: terminou o período de correções de segurança e todas as suas versões têm avisos de segurança publicados. Atualize a aplicação para Laravel 12 ou 13.
 

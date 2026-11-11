@@ -3,6 +3,19 @@
 Todas as alterações relevantes deste pacote são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.1.0] - 2026-11-11
+
+### Adicionado
+
+- Suporte a Laravel 10, para que aplicações existentes possam substituir `samuelbie/mpesa` sem atualizar primeiro a framework.
+- Dependência explícita de `guzzlehttp/guzzle` (`^7.5|^8.0`), porque o `illuminate/http` 10 não a instala. Em Laravel 12 e 13 não muda nada: o `illuminate/http` já a exige.
+- Laravel 10 na matriz de integração contínua.
+
+### Notas
+
+- Sem alterações de código nem de API. Em Laravel 12 e 13 o conjunto de dependências resolvido é o mesmo da versão 1.0.0.
+- O Laravel 11 continua sem suporte.
+
 ## [1.0.0] - 2026-11-01
 
 Primeira versão de `jjnguirazej/mpesa-sdk`, reescrita a partir de `samuelbie/mpesa` 1.6.0.
