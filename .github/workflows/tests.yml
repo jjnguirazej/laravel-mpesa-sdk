@@ -15,9 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-lowest }
-          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-stable }
-          - { php: '8.3', laravel: '10.*', testbench: '8.*', stability: prefer-stable }
+          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-lowest, insecure: true }
+          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-stable, insecure: true }
+          - { php: '8.3', laravel: '10.*', testbench: '8.*', stability: prefer-stable, insecure: true }
           - { php: '8.2', laravel: '12.*', testbench: '10.*', stability: prefer-lowest }
           - { php: '8.2', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
           - { php: '8.3', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
@@ -35,6 +35,12 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: openssl, json, curl
           coverage: none
+
+      # O Laravel 10 já não recebe correções de segurança e o Composer recusa resolvê-lo.
+      # Só estes jobs desativam o bloqueio; não afeta quem instala o pacote.
+      - name: Permitir Laravel 10 com avisos de segurança
+        if: matrix.insecure
+        run: composer config policy.advisories.block false
 
       - name: Instalar dependências
         run: |
