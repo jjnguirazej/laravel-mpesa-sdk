@@ -15,6 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-lowest }
+          - { php: '8.2', laravel: '10.*', testbench: '8.*', stability: prefer-stable }
+          - { php: '8.3', laravel: '10.*', testbench: '8.*', stability: prefer-stable }
           - { php: '8.2', laravel: '12.*', testbench: '10.*', stability: prefer-lowest }
           - { php: '8.2', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
           - { php: '8.3', laravel: '12.*', testbench: '10.*', stability: prefer-stable }
