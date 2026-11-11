@@ -15,6 +15,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 - Sem alterações de código nem de API. Em Laravel 12 e 13 o conjunto de dependências resolvido é o mesmo da versão 1.0.0.
 - O Laravel 11 continua sem suporte.
+- O Laravel 10 terminou o período de correções de segurança. Com Composer 2.9 ou superior, a resolução de um projeto novo em Laravel 10 é bloqueada pelos avisos de segurança da própria framework. Aplicações que já têm `composer.lock` instalam este pacote normalmente, apenas com o aviso do `composer audit`.
 
 ## [1.0.0] - 2026-11-01
 
